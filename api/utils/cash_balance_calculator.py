@@ -4,7 +4,6 @@ from api.models import entries
 def calcute_cash_in_hand(request):
     payments_list = []
     receipts_list = []
-    print('')
     payments = entries.objects.filter(type_of_entry='PAYMENT')
     for pay in payments:
         payments_list.append(pay.amount)

@@ -1,5 +1,6 @@
 #rest framework
 import datetime
+import traceback
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.views import APIView
@@ -153,7 +154,7 @@ class AddCashbookEntry(APIView):
                     "Status": status.HTTP_200_OK
                 }, status=status.HTTP_200_OK)
         except Exception as error:
-            print(error)
+            traceback.print_exc()
             return Response({
                     "Success": False,
                     "Message": "Internal server error",
@@ -241,6 +242,8 @@ class DeleteEntry(APIView):
         
 
         except Exception as e:
+                traceback.print_exc()
+                
                 return Response({
                     "Success": False,
                     "Message": "Internal server error",
@@ -310,12 +313,152 @@ class UpdateEntry(APIView):
                         "Status": status.HTTP_400_BAD_REQUEST
                     }, status=status.HTTP_400_BAD_REQUEST)
         
-        
+
 
         except Exception as e:
+            traceback.print_exc()
+
             return Response({
                     "Success": False,
                     "Message": "Internal server error",
                     "Data": str(e),
                     "Status": status.HTTP_500_INTERNAL_SERVER_ERROR
                 }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
+                #----------------------------------Ledger Views------------------------------------#
+
+
+class Ledger(APIView):
+    def get(self, request):
+        try:
+            non_repeated_names = entries.objects.values_list('particulars', flat=True).distinct()
+            if non_repeated_names:
+                bals = []
+                ledger_list = []
+                for names in non_repeated_names:
+                    payments = entries.objects.filter(type_of_entry='PAYMENT',particulars=names)
+                    tlistpay = []
+                    for pay in payments:
+                        totallist = tlistpay.append(pay.amount)
+                    payments_total = sum(tlistpay)
+                    receipts = entries.objects.filter(type_of_entry='RECEIPT',particulars=names)
+
+                    tlistrec = []
+                    for pay in receipts:
+                        totallist = tlistrec.append(pay.amount)
+                    receipts_total = sum(tlistrec)
+
+                    cash1 = receipts_total - payments_total
+                    bals.append(cash1)
+                
+                account_head_with_balance = list(zip(non_repeated_names, bals))
+                
+                for account_head, balance in account_head_with_balance:
+                    ledger_data = {
+                        'account_head': account_head,
+                        'balance': balance 
+                    }
+                    ledger_list.append(ledger_data)
+                
+                return Response({
+                                    "Success": True,
+                                    "Message": "Ledger retrieved succesfully.",
+                                    "Data": ledger_list,
+                                    "Status": status.HTTP_200_OK
+                                },status=status.HTTP_200_OK
+                                )
+            
+            else:
+                return Response({
+                                    "Success": True,
+                                    "Message": "No Entries available to display.",
+                                    "Data": '',
+                                    "Status": status.HTTP_200_OK
+                                },status=status.HTTP_200_OK
+                                )
+        
+        
+        except Exception as internal:
+            traceback.print_exc()
+            return Response({
+                    "Success": False,
+                    "Message": "Internal server error",
+                    "Data": str(internal),
+                    "Status": status.HTTP_500_INTERNAL_SERVER_ERROR
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
+class LedgerAccount(APIView):
+    def get(self, request, particulars):
+        try:
+            paricular_account = entries.objects.filter(particulars=particulars).order_by('date')
+            payments = entries.objects.filter(type_of_entry='PAYMENT',particulars=particulars)
+            tlistpay = []
+            for pay in payments:
+                totallist = tlistpay.append(pay.amount)
+            payments_total = sum(tlistpay)
+            receipts = entries.objects.filter(type_of_entry='RECEIPT',particulars=particulars)
+            tlistrec = []
+            for pay in receipts:
+                totallist = tlistrec.append(pay.amount)
+            receipts_total = sum(tlistrec)
+            cash1 = receipts_total - payments_total
+            p_cash = []
+            neg_check = []
+            if paricular_account[0].type_of_entry == 'PAYMENT':
+                cash = -1 * paricular_account[0].amount
+                p_cash.append(cash)
+            else:
+                cash = paricular_account[0].amount
+                p_cash.append(cash)
+            y = len(paricular_account)
+            for ent in range(1,y):
+                if paricular_account[ent].type_of_entry == 'RECEIPT':
+                    cash = p_cash[-1] + paricular_account[ent].amount
+                    p_cash.append(cash)
+                else:
+                    if p_cash[-1] < 0:  
+                        cash = p_cash[-1] - paricular_account[ent].amount
+                    else:
+                        cash = p_cash[-1] + paricular_account[ent].amount
+                    p_cash.append(cash)
+            for ch in p_cash:
+                if ch < 0:
+                    neg_check.append(False)
+                else:
+                    neg_check.append(True)
+
+            serialized_data = EntriesSerializer(paricular_account, many=True)
+
+            ledger_account_data = {
+                'account': serialized_data.data,
+                'cashp': cash1,
+                'particulars': particulars,
+                'receipts_total': receipts_total,
+                'payments_total': payments_total
+            }
+
+
+            return Response({
+                                    "Success": True,
+                                    "Message": "Ledger Account retrieved succesfully.",
+                                    "Data": ledger_account_data,
+                                    "Status": status.HTTP_200_OK
+                                },status=status.HTTP_200_OK
+                                )
+
+        
+        except Exception as internal:
+            traceback.print_exc()
+            return Response({
+                    "Success": False,
+                    "Message": "Internal server error",
+                    "Data": str(internal),
+                    "Status": status.HTTP_500_INTERNAL_SERVER_ERROR
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+
+        
