@@ -1,5 +1,7 @@
 #rest framework
+import csv
 import datetime
+from io import TextIOWrapper
 import traceback
 from rest_framework.response import Response
 from rest_framework import status
@@ -461,4 +463,133 @@ class LedgerAccount(APIView):
                 }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
 
+
+
+def add_bulk_entries_util(params):
+    try:
+        date = params['date']
+        print(date)
+        type_of_entry = params['type_of_entry'].upper()
+        particulars = params['particulars']
+        detail = params['detail']
+        amount = int(params['amount'])
+        cash = 0
+        date_format = "%d-%m-%Y" # Adjust the format based on your date string
+        date_object = date
+        max_date_of_entry = entries.objects.aggregate(max_date=Max('date'))['max_date']
+
+        if max_date_of_entry is None:
+            max_date_of_entry = date_object
+        if date_object < max_date_of_entry:
+            try:
+                al_objs_earlier = entries.objects.filter(date=date_object)
+                al_objs_earlier_b = entries.objects.filter(date__lt=date_object).order_by('date')
+                l = len(al_objs_earlier)
+                l2 = len(al_objs_earlier_b)
+
+            except Exception as e:
+                print(e)
+            print(l,l2)
+            if al_objs_earlier:
+                al_objs_earlier = al_objs_earlier[l-1]
+                if type_of_entry == 'RECEIPT':
+                    cash = al_objs_earlier.cash + amount
+                else:
+                    cash = al_objs_earlier.cash - amount
+            elif l == 0 and l2 == 0:
+                print('inside elif')
+                print(type_of_entry)
+                if type_of_entry == 'RECEIPT':
+                    cash = amount
+                else:
+                    cash = -1 * amount
+            else:
+                al_objs_earlier = al_objs_earlier_b[l2-1]
+                if type_of_entry == 'RECEIPT':
+                    cash = al_objs_earlier.cash + amount
+                else:
+                    cash = al_objs_earlier.cash - amount
+                
+            entries.objects.create(date=date,type_of_entry=type_of_entry,particulars=particulars,detail=detail,amount=amount,cash=cash)
+            upd = entries.objects.last()
+            upd_obj = entries.objects.get(id=upd.id)
+            print(cash)
+            upd_obj.cash = cash
+            upd_obj.save()
+            al_objs = entries.objects.filter(date__gt=date_object)
+            for al in al_objs:
+                if type_of_entry == 'RECEIPT':
+                    old_cash = al.cash
+                    new_cash = old_cash + amount
+                else:
+                    old_cash = al.cash
+                    new_cash = old_cash - amount
+                upd_obj = entries.objects.get(id=al.id)
+                upd_obj.cash = new_cash
+                upd_obj.save()
+
+        else:
+            entries.objects.create(date=date,type_of_entry=type_of_entry,particulars=particulars,detail=detail,amount=amount,cash=cash)
+            upd = entries.objects.last()
+            upd_obj = entries.objects.get(id=upd.id)
+            print(upd_obj.cash)
+            cash = calcute_cash_in_hand()
+            upd_obj.cash = cash
+            upd_obj.save()
+
+        return True
         
+    except Exception as internal:
+        traceback.print_exc()
+        return False
+    
+   
+class AddBulkEntries(APIView):
+    def post(self, request):
+        try:
+            csv_file = request.FILES.get('csv_file')
+            csv_file_data = []
+            date_format = "%d-%m-%Y"
+            inserted_data_list = []
+            if csv_file:
+                uploaded_file_wrapper = TextIOWrapper(csv_file.file, encoding='utf-8')
+                print(type(uploaded_file_wrapper))
+                reader = csv.reader(uploaded_file_wrapper)
+
+                next(reader, None)
+                for row in reader:
+                    print(row)
+                    date = datetime.datetime.strptime(row[0], date_format).date()
+                    type_of_entry = row[1]
+                    particulars = row[2]
+                    detail = row[3]
+                    amount = row[4]
+                    data = {'date': date, 'type_of_entry': type_of_entry, 'particulars': particulars, 'detail': detail, 'amount': amount}
+                    inserted_data_list.append(data)
+                    add_entries = add_bulk_entries_util(data)
+                if add_entries:
+                    print('done')
+                    return Response({
+                        "success": True,
+                        "message": "Added Entries successfully",
+                        "status_code": status.HTTP_200_OK,
+                        "data": inserted_data_list
+                    }, status=status.HTTP_200_OK
+                    )
+                else:
+                    return Response({
+                        "success": False,
+                        "message": "Bad Request.",
+                        "status_code": status.HTTP_400_BAD_REQUEST,
+                        "data": ""
+                    }, status=status.HTTP_400_BAD_REQUEST
+                    )
+        except Exception as error:
+            print(error)
+            return Response({
+                        "success": False,
+                        "message": "Internal server error.",
+                        "status_code": status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        "data": ""
+                    },status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                    )

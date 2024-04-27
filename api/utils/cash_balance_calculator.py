@@ -1,7 +1,7 @@
 from api.models import entries
 
 
-def calcute_cash_in_hand(request):
+def calcute_cash_in_hand():
     payments_list = []
     receipts_list = []
     payments = entries.objects.filter(type_of_entry='PAYMENT')
